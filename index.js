@@ -24,6 +24,7 @@ const {
 } = require("discord.js");
 
 const discordTranscripts = require('discord-html-transcripts');
+const ms = require('ms');
 
 const client = new Client({
   intents: [
@@ -36,7 +37,7 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 
 // ==========================================
-// DEINE KATEGORIE- UND KANAL-IDS (FEST EINGEBAUT)
+// CONFIG: DEINE KATEGORIE- UND KANAL-IDS
 // ==========================================
 const CATEGORIES = {
   kaufen: "1542302564538646569",    
@@ -45,8 +46,9 @@ const CATEGORIES = {
   giveaway: "1542304111758807130"   
 };
 
-// Deine feste Transcript-Kanal-ID
 const TRANSCRIPT_CHANNEL_ID = "1542306795777695885"; 
+
+const activeGiveaways = new Map();
 
 // ==========================================
 // SLASH COMMANDS REGISTER
@@ -57,7 +59,16 @@ client.once("ready", async () => {
   const commands = [
     { name: 'panel', description: 'Erstellt das Support- und Ticket-Panel' },
     { name: 'claim', description: 'Übernimm dieses Ticket als Supporter' },
-    { name: 'close', description: 'Löscht das Ticket und sendet das Transcript in den Log-Kanal' }
+    { name: 'close', description: 'Löscht das Ticket und sendet das Transcript in den Log-Kanal' },
+    {
+      name: 'giveaway-start',
+      description: 'Startet ein neues Gewinnspiel',
+      options: [
+        { name: 'zeit', description: 'Dauer (z.B. 12h, 30m, 1d)', type: 3, required: true },
+        { name: 'gewinn', description: 'Was gibt es zu gewinnen? (z.B. 4m)', type: 3, required: true },
+        { name: 'gewinner_anzahl', description: 'Wie viele Gewinner?', type: 4, required: true }
+      ]
+    }
   ];
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -75,7 +86,6 @@ client.once("ready", async () => {
 // ==========================================
 client.on("interactionCreate", async interaction => {
   
-  // 1. SLASH COMMANDS
   if (interaction.isChatInputCommand()) {
     
     if (interaction.commandName === "panel") {
@@ -100,7 +110,6 @@ client.on("interactionCreate", async interaction => {
       await interaction.reply({ content: `👋 Dieses Ticket wurde von ${interaction.user} übernommen und wird nun bearbeitet.` });
     }
 
-    // TICKET DIREKT LÖSCHEN MIT /CLOSE + PROTOKOLL IM TRANSCRIPT-KANAL
     if (interaction.commandName === "close") {
       if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
         return interaction.reply({ content: "❌ Du hast keine Berechtigung, dieses Ticket zu schließen!", ephemeral: true });
@@ -109,62 +118,170 @@ client.on("interactionCreate", async interaction => {
       await interaction.reply({ content: "⏳ Transcript wird generiert und Ticket gelöscht...", ephemeral: true });
       
       try {
-        // 1. Erstellt das HTML-Transcript aus dem Chatverlauf
         const attachment = await discordTranscripts.createTranscript(interaction.channel, {
           limit: -1, 
-          fileName: `transcript-${interaction.channel.name}.html`,
+          fileName: `transcript-\${interaction.channel.name}.html`,
           returnType: 'attachment'
         });
 
-        // 2. Sucht den festen Log-Kanal auf deinem Server
         const logChannel = interaction.guild.channels.cache.get(TRANSCRIPT_CHANNEL_ID);
-
         if (logChannel) {
           const logEmbed = new EmbedBuilder()
             .setTitle("📄 Ticket-Protokoll archiviert")
-            .setDescription(`**Kanal:** \`${interaction.channel.name}\`\n**Geschlossen von:** ${interaction.user}`)
+            .setDescription(`**Kanal:** \\`\${interaction.channel.name}\\`\n**Geschlossen von:** \${interaction.user}`)
             .setColor(0xED4245)
             .setTimestamp();
 
-          // Sendet das Transcript direkt in den Log-Kanal
           await logChannel.send({ embeds: [logEmbed], files: [attachment] });
-        } else {
-          console.error("Transcript-Kanal wurde nicht gefunden! ID überprüfen.");
+        }
+        await interaction.channel.delete().catch(console.error);
+      } catch (e) {
+        console.error("Fehler beim Schließen:", e);
+      }
+    }
+
+    if (interaction.commandName === "giveaway-start") {
+      if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+        return interaction.reply({ content: "❌ Keine Rechte für Giveaways!", ephemeral: true });
+      }
+
+      const zeitInput = interaction.options.getString('zeit');
+      const gewinn = interaction.options.getString('gewinn');
+      const gewinnerAnzahl = interaction.options.getInteger('gewinner_anzahl');
+
+      const dauerMs = ms(zeitInput);
+      if (!dauerMs) return interaction.reply({ content: "❌ Ungültiges Zeitformat! Nutze z.B. \`12h\`, \`30m\` oder \`1d\`.", ephemeral: true });
+
+      const endZeitUnix = Math.floor((Date.now() + dauerMs) / 1000);
+      const giveawayId = Math.floor(Math.random() * 1000);
+
+      const giveawayEmbed = new EmbedBuilder()
+        .setTitle(gewinn)
+        .setDescription(`Endet: <t:\${endZeitUnix}:R> (<t:\${endZeitUnix}:F>)\nGehostet von: \${interaction.user}\nTeilnahmen: **0**\nGewinner: **\${gewinnerAnzahl}**\n\nGiveaway #\${giveawayId}`)
+        .setColor(0x2F3136);
+
+      const joinBtn = new ButtonBuilder()
+        .setCustomId("giveaway_join")
+        .setLabel("Teilnehmen")
+        .setEmoji("🎉")
+        .setStyle(ButtonStyle.Primary);
+
+      const row = new ActionRowBuilder().addComponents(joinBtn);
+      const msg = await interaction.reply({ embeds: [giveawayEmbed], components: [row], fetchReply: true });
+
+      activeGiveaways.set(msg.id, {
+        gewinn: gewinn,
+        gewinnerAnzahl: gewinnerAnzahl,
+        endZeit: Date.now() + dauerMs,
+        hostId: interaction.user.id,
+        teilnehmer: [],
+        giveawayId: giveawayId,
+        channelId: interaction.channel.id
+      });
+
+      setTimeout(async () => {
+        const data = activeGiveaways.get(msg.id);
+        if (!data) return;
+
+        const channel = client.channels.cache.get(data.channelId);
+        if (!channel) return;
+
+        const fetchedMsg = await channel.messages.fetch(msg.id).catch(() => null);
+        if (!fetchedMsg) return;
+
+        if (data.teilnehmer.length === 0) {
+          const noWinnersEmbed = new EmbedBuilder()
+            .setTitle(data.gewinn)
+            .setDescription(`Beendet!\nGehostet von: <@\${data.hostId}>\nGewinner: **Niemand hat teilgenommen.**\n\nGiveaway #\${data.giveawayId}`)
+            .setColor(0xED4245);
+          
+          await fetchedMsg.edit({ embeds: [noWinnersEmbed], components: [] });
+          return;
         }
 
-        // 3. Löscht das Ticket sofort
-        await interaction.channel.delete().catch(console.error);
+        const gewinner = [];
+        const copyTeilnehmer = [...data.teilnehmer];
+        const anzahl = Math.min(data.gewinnerAnzahl, copyTeilnehmer.length);
+        
+        for (let i = 0; i < anzahl; i++) {
+          const index = Math.floor(Math.random() * copyTeilnehmer.length);
+          const picked = copyTeilnehmer.splice(index, 1);
+          gewinner.push(picked);
+        }
 
-      } catch (e) {
-        console.error("Fehler beim automatischen Löschen:", e);
-        await interaction.followUp({ content: "Fehler beim Erstellen des Transcripts. Der Kanal wurde zur Sicherheit nicht gelöscht.", ephemeral: true });
-      }
+        const gewinnerMentions = gewinner.map(id => `<@\${id}>`).join(', ');
+
+        const endEmbed = new EmbedBuilder()
+          .setTitle(data.gewinn)
+          .setDescription(`Beendet!\nGehostet von: <@\${data.hostId}>\nGewinner: \${gewinnerMentions}\n\nGiveaway #\${data.giveawayId}`)
+          .setColor(0x23272A);
+
+        await fetchedMsg.edit({ embeds: [endEmbed], components: [] });
+        
+        await channel.send({
+          content: `Glückwunsch \${gewinnerMentions}, du hast das **\${data.gewinn}**-Giveaway gewonnen!`
+        });
+
+        activeGiveaways.delete(msg.id);
+      }, dauerMs);
     }
   }
 
-  // 2. BUTTON INTERACTIONS (TICKET ERSTELLUNG)
   if (interaction.isButton()) {
+    
+    if (interaction.customId === "giveaway_join") {
+      const data = activeGiveaways.get(interaction.message.id);
+      if (!data) return interaction.reply({ content: "❌ Dieses Giveaway existiert nicht mehr oder ist beendet.", ephemeral: true });
+
+      if (data.teilnehmer.includes(interaction.user.id)) {
+        return interaction.reply({ content: "❌ Du nimmst bereits an diesem Giveaway teil!", ephemeral: true });
+      }
+
+      data.teilnehmer.push(interaction.user.id);
+      activeGiveaways.set(interaction.message.id, data);
+
+      const endZeitUnix = Math.floor(data.endZeit / 1000);
+      const updatedEmbed = new EmbedBuilder()
+        .setTitle(data.gewinn)
+        .setDescription(`Endet: <t:\${endZeitUnix}:R> (<t:\${endZeitUnix}:F>)\nGehostet von: <@\${data.hostId}>\nTeilnahmen: **\${data.teilnehmer.length}**\nGewinner: **\${data.gewinnerAnzahl}**\n\nGiveaway #\${data.giveawayId}`)
+        .setColor(0x2F3136);
+
+      await interaction.update({ embeds: [updatedEmbed] });
+      return;
+    }
+
     await interaction.deferReply({ ephemeral: true });
+
+    const channels = interaction.guild.channels.cache;
+    const hasTicket = channels.some(channel => 
+      channel.type === ChannelType.GuildText && 
+      channel.permissionOverwrites.cache.has(interaction.user.id) &&
+      (channel.name.includes("kauf-") || channel.name.includes("verkauf-") || channel.name.includes("support-") || channel.name.includes("claim-"))
+    );
+
+    if (hasTicket) {
+      return interaction.editReply({ content: "❌ Du hast bereits ein offenes Ticket! Schließe dieses zuerst, bevor du ein neues öffnest." });
+    }
 
     let ticketName = "ticket";
     let welcomeMessage = "Willkommen im Ticket!";
     let categoryId = null;
 
     if (interaction.customId === "spawner_kaufen") {
-      ticketName = `🛒-kauf-${interaction.user.username}`;
-      welcomeMessage = `Hallo ${interaction.user}, hier kannst du **Spawner kaufen**. Bitte schreibe, welche Spawner du suchst und wie viele du benötigst!`;
+      ticketName = `🛒-kauf-\${interaction.user.username}`;
+      welcomeMessage = `Hallo \${interaction.user}, hier kannst du **Spawner kaufen**. Bitte schreibe, welche Spawner du suchst und wie viele du benötigst!`;
       categoryId = CATEGORIES.kaufen;
     } else if (interaction.customId === "spawner_verkaufen") {
-      ticketName = `💰-verkauf-${interaction.user.username}`;
-      welcomeMessage = `Hallo ${interaction.user}, hier kannst du **Spawner verkaufen**. Bitte nenne uns deine Spawner und die genaue Anzahl. Der Ankauf erfolgt zu unseren festen Server-Preisen!`;
+      ticketName = `💰-verkauf-\${interaction.user.username}`;
+      welcomeMessage = `Hallo \${interaction.user}, hier kannst du **Spawner verkaufen**. Bitte nenne uns deine Spawner und die genaue Anzahl. Der Ankauf erfolgt zu unseren festen Server-Preisen!`;
       categoryId = CATEGORIES.verkaufen;
     } else if (interaction.customId === "support_ticket") {
-      ticketName = `🛠️-support-${interaction.user.username}`;
-      welcomeMessage = `Hallo ${interaction.user}, ein Teammitglied wird sich gleich um dein **Support-Anliegen** kümmern. Bitte beschreibe dein Problem genau.`;
+      ticketName = `🛠️-support-\${interaction.user.username}`;
+      welcomeMessage = `Hallo \${interaction.user}, ein Teammitglied wird sich gleich um dein **Support-Anliegen** kümmern. Bitte beschreibe dein Problem genau.`;
       categoryId = CATEGORIES.support;
     } else if (interaction.customId === "giveaway_claim") {
-      ticketName = `🎉-claim-${interaction.user.username}`;
-      welcomeMessage = `Herzlichen Glückwunsch ${interaction.user}! Du möchtest deinen **Giveaway-Gewinn einfordern**. Bitte sende einen Screenshot des Gewinns hier hinein.`;
+      ticketName = `🎉-claim-\${interaction.user.username}`;
+      welcomeMessage = `Herzlichen Glückwunsch \${interaction.user}! Du möchtest deinen **Giveaway-Gewinn einfordern**. Bitte sende einen Screenshot des Gewinns hier hinein.`;
       categoryId = CATEGORIES.giveaway;
     }
 
@@ -182,7 +299,7 @@ client.on("interactionCreate", async interaction => {
 
       const ticketEmbed = new EmbedBuilder().setTitle("✉️ Support-Ticket geöffnet").setDescription(welcomeMessage).setColor(0x5865F2).setTimestamp();
       await ticketChannel.send({ embeds: [ticketEmbed] });
-      await interaction.editReply({ content: `Dein Ticket wurde erfolgreich erstellt: ${ticketChannel}` });
+      await interaction.editReply({ content: `Dein Ticket wurde erfolgreich erstellt: \${ticketChannel}` });
 
     } catch (error) {
       console.error(error);
@@ -192,5 +309,3 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.login(TOKEN);
-
-
