@@ -1,5 +1,6 @@
 const express = require('express');
-const https = require('https'); 
+const https = require('https');
+
 const app = express();
 const port = process.env.PORT || 10000;
 
@@ -9,11 +10,8 @@ app.get('/', (req, res) => {
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`Webserver läuft auf Port ${port}`);
-  
-  // ==========================================
-  // AUTOMATISCHER SELF-PING
-  // ==========================================
-  const RENDER_URL = 'https://onrender.com'; 
+
+  const RENDER_URL = 'https://onrender.com';
 
   setInterval(() => {
     https.get(RENDER_URL, (res) => {
@@ -34,8 +32,9 @@ const {
   REST,
   Routes,
   ChannelType,
-  PermissionsBitField
-} = require("discord.js");
+  PermissionsBitField,
+  MessageFlags
+} = require('discord.js');
 
 const discordTranscripts = require('discord-html-transcripts');
 const ms = require('ms');
@@ -44,31 +43,40 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent 
+    GatewayIntentBits.MessageContent
   ]
 });
 
 const TOKEN = process.env.TOKEN;
 
 const CATEGORIES = {
-  kaufen: "1542302564538646569",    
-  verkaufen: "1542303195131281428", 
-  support: "1542303648531484763",   
-  giveaway: "1542304111758807130"   
+  kaufen: "1542302564538646569",
+  verkaufen: "1542303195131281428",
+  support: "1542303648531484763",
+  giveaway: "1542304111758807130"
 };
 
-const TRANSCRIPT_CHANNEL_ID = "1542306795777695885"; 
+const TRANSCRIPT_CHANNEL_ID = "1542306795777695885";
 const GIVEAWAY_PING_ROLE_ID = "1542466513871568926";
 
 const activeGiveaways = new Map();
 
 client.once("ready", async () => {
   console.log(`Bot online als ${client.user.tag}`);
-  
+
   const commands = [
-    { name: 'panel', description: 'Erstellt das Support- und Ticket-Panel' },
-    { name: 'claim', description: 'Übernimm dieses Ticket als Supporter' },
-    { name: 'close', description: 'Löscht das Ticket und sendet das Transcript in den Log-Kanal' },
+    {
+      name: 'panel',
+      description: 'Erstellt das Support- und Ticket-Panel'
+    },
+    {
+      name: 'claim',
+      description: 'Übernimm dieses Ticket als Supporter'
+    },
+    {
+      name: 'close',
+      description: 'Löscht das Ticket und sendet das Transcript in den Log-Kanal'
+    },
     {
       name: 'giveaway-start',
       description: 'Startet ein neues Gewinnspiel',
@@ -99,29 +107,27 @@ client.once("ready", async () => {
 
   try {
     console.log('Starte Registrierung der Slash-Commands...');
+
     await rest.put(
       Routes.applicationCommands(client.user.id),
       { body: commands }
     );
+
     console.log('Slash-Commands erfolgreich registriert!');
   } catch (error) {
     console.error('Fehler beim Registrieren der Commands:', error);
   }
 });
 
-// ==========================================
-// INTERAKTIONEN
-// ==========================================
 client.on("interactionCreate", async interaction => {
 
   // ==========================================
   // SLASH COMMANDS
   // ==========================================
+
   if (interaction.isChatInputCommand()) {
 
-    // ==========================================
     // PANEL
-    // ==========================================
     if (interaction.commandName === "panel") {
 
       const embed = new EmbedBuilder()
@@ -160,7 +166,12 @@ client.on("interactionCreate", async interaction => {
         .setStyle(ButtonStyle.Danger);
 
       const row = new ActionRowBuilder()
-        .addComponents(kaufen, verkaufen, support, giveaway);
+        .addComponents(
+          kaufen,
+          verkaufen,
+          support,
+          giveaway
+        );
 
       await interaction.channel.send({
         embeds: [embed],
@@ -169,20 +180,18 @@ client.on("interactionCreate", async interaction => {
 
       await interaction.reply({
         content: "✅ Panel wurde erfolgreich gepostet!",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
 
       return;
     }
 
-    // ==========================================
-    // DEFER FÜR ANDERE COMMANDS
-    // ==========================================
-    await interaction.deferReply({ ephemeral: true });
+    // Alle anderen Commands
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral
+    });
 
-    // ==========================================
     // CLAIM
-    // ==========================================
     if (interaction.commandName === "claim") {
 
       if (!interaction.member.permissions.has(
@@ -194,17 +203,16 @@ client.on("interactionCreate", async interaction => {
       }
 
       await interaction.channel.send({
-        content: `👋 Dieses Ticket wurde von ${interaction.user} übernommen und wird nun bearbeitet.`
+        content:
+          `👋 Dieses Ticket wurde von ${interaction.user} übernommen und wird nun bearbeitet.`
       });
 
-      await interaction.editReply({
+      return interaction.editReply({
         content: "✅ Ticket erfolgreich übernommen!"
       });
     }
 
-    // ==========================================
     // CLOSE
-    // ==========================================
     if (interaction.commandName === "close") {
 
       if (!interaction.member.permissions.has(
@@ -226,7 +234,8 @@ client.on("interactionCreate", async interaction => {
             interaction.channel,
             {
               limit: -1,
-              fileName: `transcript-${interaction.channel.name}.html`,
+              fileName:
+                `transcript-${interaction.channel.name}.html`,
               returnType: 'attachment'
             }
           );
@@ -253,16 +262,17 @@ client.on("interactionCreate", async interaction => {
           });
         }
 
-        await interaction.channel.delete().catch(console.error);
+        await interaction.channel.delete()
+          .catch(console.error);
 
-      } catch (e) {
-        console.error("Fehler beim Schließen:", e);
+      } catch (error) {
+        console.error("Fehler beim Schließen:", error);
       }
+
+      return;
     }
 
-    // ==========================================
     // GIVEAWAY START
-    // ==========================================
     if (interaction.commandName === "giveaway-start") {
 
       if (!interaction.member.permissions.has(
@@ -297,25 +307,28 @@ client.on("interactionCreate", async interaction => {
       const giveawayId =
         Math.floor(Math.random() * 1000);
 
-      const giveawayEmbed = new EmbedBuilder()
-        .setTitle(gewinn)
-        .setDescription(
-          `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
-          `Gehostet von: ${interaction.user}\n` +
-          `Teilnahmen: **0**\n` +
-          `Gewinner: **${gewinnerAnzahl}**\n\n` +
-          `Giveaway #${giveawayId}`
-        )
-        .setColor(0x2F3136);
+      const giveawayEmbed =
+        new EmbedBuilder()
+          .setTitle(gewinn)
+          .setDescription(
+            `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
+            `Gehostet von: ${interaction.user}\n` +
+            `Teilnahmen: **0**\n` +
+            `Gewinner: **${gewinnerAnzahl}**\n\n` +
+            `Giveaway #${giveawayId}`
+          )
+          .setColor(0x2F3136);
 
-      const joinBtn = new ButtonBuilder()
-        .setCustomId("giveaway_join")
-        .setLabel("Teilnehmen")
-        .setEmoji("🎉")
-        .setStyle(ButtonStyle.Primary);
+      const joinBtn =
+        new ButtonBuilder()
+          .setCustomId("giveaway_join")
+          .setLabel("Teilnehmen")
+          .setEmoji("🎉")
+          .setStyle(ButtonStyle.Primary);
 
-      const row = new ActionRowBuilder()
-        .addComponents(joinBtn);
+      const row =
+        new ActionRowBuilder()
+          .addComponents(joinBtn);
 
       const pingMsg =
         await interaction.channel.send({
@@ -346,7 +359,8 @@ client.on("interactionCreate", async interaction => {
 
       setTimeout(async () => {
 
-        const data = activeGiveaways.get(msg.id);
+        const data =
+          activeGiveaways.get(msg.id);
 
         if (!data) return;
 
@@ -356,61 +370,73 @@ client.on("interactionCreate", async interaction => {
         if (!channel) return;
 
         const fetchedMsg =
-          await channel.messages.fetch(msg.id).catch(() => null);
+          await channel.messages.fetch(msg.id)
+            .catch(() => null);
 
         if (!fetchedMsg) return;
 
+        // Niemand
         if (data.teilnehmer.length === 0) {
 
-          const noWinnersEmbed = new EmbedBuilder()
-            .setTitle(data.gewinn)
-            .setDescription(
-              `Beendet!\n` +
-              `Gehostet von: <@${data.hostId}>\n` +
-              `Gewinner: **Niemand hat teilgenommen.**\n\n` +
-              `Giveaway #${data.giveawayId}`
-            )
-            .setColor(0xED4245);
+          const noWinnersEmbed =
+            new EmbedBuilder()
+              .setTitle(data.gewinn)
+              .setDescription(
+                `Beendet!\n` +
+                `Gehostet von: <@${data.hostId}>\n` +
+                `Gewinner: **Niemand hat teilgenommen.**\n\n` +
+                `Giveaway #${data.giveawayId}`
+              )
+              .setColor(0xED4245);
 
           await fetchedMsg.edit({
             embeds: [noWinnersEmbed],
             components: []
           });
 
+          activeGiveaways.delete(msg.id);
           return;
         }
 
         const gewinner = [];
-        const copyTeilnehmer = [...data.teilnehmer];
+        const copyTeilnehmer =
+          [...data.teilnehmer];
 
-        const anzahl = Math.min(
-          data.gewinnerAnzahl,
-          copyTeilnehmer.length
-        );
+        const anzahl =
+          Math.min(
+            data.gewinnerAnzahl,
+            copyTeilnehmer.length
+          );
 
         for (let i = 0; i < anzahl; i++) {
 
           const index =
-            Math.floor(Math.random() * copyTeilnehmer.length);
+            Math.floor(
+              Math.random() *
+              copyTeilnehmer.length
+            );
 
           const picked =
-            copyTeilnehmer.splice(index, 1);
+            copyTeilnehmer.splice(index, 1)[0];
 
           gewinner.push(picked);
         }
 
         const gewinnerMentions =
-          gewinner.map(id => `<@${id}>`).join(', ');
+          gewinner
+            .map(id => `<@${id}>`)
+            .join(', ');
 
-        const endEmbed = new EmbedBuilder()
-          .setTitle(data.gewinn)
-          .setDescription(
-            `Beendet!\n` +
-            `Gehostet von: <@${data.hostId}>\n` +
-            `Gewinner: ${gewinnerMentions}\n\n` +
-            `Giveaway #${data.giveawayId}`
-          )
-          .setColor(0x23272A);
+        const endEmbed =
+          new EmbedBuilder()
+            .setTitle(data.gewinn)
+            .setDescription(
+              `Beendet!\n` +
+              `Gehostet von: <@${data.hostId}>\n` +
+              `Gewinner: ${gewinnerMentions}\n\n` +
+              `Giveaway #${data.giveawayId}`
+            )
+            .setColor(0x23272A);
 
         await fetchedMsg.edit({
           embeds: [endEmbed],
@@ -419,24 +445,25 @@ client.on("interactionCreate", async interaction => {
 
         await channel.send({
           content:
-            `Glückwunsch ${gewinnerMentions}, du hast das ` +
-            `**${data.gewinn}**-Giveaway gewonnen!`
+            `Glückwunsch ${gewinnerMentions}, ` +
+            `du hast das **${data.gewinn}**-Giveaway gewonnen!`
         });
 
         activeGiveaways.delete(msg.id);
 
       }, dauerMs);
+
+      return;
     }
   }
 
   // ==========================================
   // BUTTONS
   // ==========================================
+
   if (interaction.isButton()) {
 
-    // ==========================================
-    // GIVEAWAY JOIN
-    // ==========================================
+    // GIVEAWAY TEILNAHME
     if (interaction.customId === "giveaway_join") {
 
       const data =
@@ -446,7 +473,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({
           content:
             "❌ Dieses Giveaway existiert nicht mehr oder ist beendet.",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
 
@@ -454,7 +481,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({
           content:
             "❌ Du nimmst bereits an diesem Giveaway teil!",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
 
@@ -468,16 +495,17 @@ client.on("interactionCreate", async interaction => {
       const endZeitUnix =
         Math.floor(data.endZeit / 1000);
 
-      const updatedEmbed = new EmbedBuilder()
-        .setTitle(data.gewinn)
-        .setDescription(
-          `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
-          `Gehostet von: <@${data.hostId}>\n` +
-          `Teilnahmen: **${data.teilnehmer.length}**\n` +
-          `Gewinner: **${data.gewinnerAnzahl}**\n\n` +
-          `Giveaway #${data.giveawayId}`
-        )
-        .setColor(0x2F3136);
+      const updatedEmbed =
+        new EmbedBuilder()
+          .setTitle(data.gewinn)
+          .setDescription(
+            `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
+            `Gehostet von: <@${data.hostId}>\n` +
+            `Teilnahmen: **${data.teilnehmer.length}**\n` +
+            `Gewinner: **${data.gewinnerAnzahl}**\n\n` +
+            `Giveaway #${data.giveawayId}`
+          )
+          .setColor(0x2F3136);
 
       await interaction.update({
         embeds: [updatedEmbed]
@@ -486,10 +514,10 @@ client.on("interactionCreate", async interaction => {
       return;
     }
 
-    // ==========================================
     // TICKET BUTTONS
-    // ==========================================
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral
+    });
 
     let ticketName = "ticket";
     let welcomeMessage = "Willkommen im Ticket!";
@@ -527,8 +555,8 @@ client.on("interactionCreate", async interaction => {
         `🛠️-support-${interaction.user.username}`;
 
       welcomeMessage =
-        `Hallo ${interaction.user}, ein Teammitglied wird sich gleich um ` +
-        `dein **Support-Anliegen** kümmern. Bitte beschreibe dein Problem genau.`;
+        `Hallo ${interaction.user}, ein Teammitglied wird sich gleich ` +
+        `um dein **Support-Anliegen** kümmern. Bitte beschreibe dein Problem genau.`;
 
       categoryId = CATEGORIES.support;
       typeKeyword = "support-";
@@ -539,16 +567,15 @@ client.on("interactionCreate", async interaction => {
         `🎉-claim-${interaction.user.username}`;
 
       welcomeMessage =
-        `Herzlichen Glückwunsch ${interaction.user}! Du möchtest deinen ` +
-        `**Giveaway-Gewinn einfordern**. Bitte sende einen Screenshot des Gewinns hier hinein.`;
+        `Herzlichen Glückwunsch ${interaction.user}! ` +
+        `Du möchtest deinen **Giveaway-Gewinn einfordern**. ` +
+        `Bitte sende einen Screenshot des Gewinns hier hinein.`;
 
       categoryId = CATEGORIES.giveaway;
       typeKeyword = "claim-";
     }
 
-    // ==========================================
-    // TICKET PRÜFUNG
-    // ==========================================
+    // Prüfen, ob bereits Ticket dieser Kategorie existiert
     const channels =
       interaction.guild.channels.cache;
 
@@ -569,9 +596,6 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-    // ==========================================
-    // TICKET ERSTELLEN
-    // ==========================================
     try {
 
       const ticketChannel =
@@ -609,11 +633,12 @@ client.on("interactionCreate", async interaction => {
           ]
         });
 
-      const ticketEmbed = new EmbedBuilder()
-        .setTitle("✉️ Support-Ticket geöffnet")
-        .setDescription(welcomeMessage)
-        .setColor(0x5865F2)
-        .setTimestamp();
+      const ticketEmbed =
+        new EmbedBuilder()
+          .setTitle("✉️ Support-Ticket geöffnet")
+          .setDescription(welcomeMessage)
+          .setColor(0x5865F2)
+          .setTimestamp();
 
       await ticketChannel.send({
         embeds: [ticketEmbed]
@@ -630,7 +655,7 @@ client.on("interactionCreate", async interaction => {
 
       await interaction.editReply({
         content:
-          "Fehler beim Erstellen deines Tickets."
+          "❌ Fehler beim Erstellen deines Tickets."
       });
     }
   }
