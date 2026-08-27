@@ -23,7 +23,7 @@
     <meta name="google-site-verification" content="jkUAIOE8owUXu8UXIhRLB9oHJsWBfOgJbZzncqHoF4A" />
     <link rel="canonical" href="https://pastebin.com/" />
         <meta name="csrf-param" content="_csrf-frontend">
-<meta name="csrf-token" content="mp53BgCaQDS-O9Pt5_BuK66nhbWPrzZnK_oMPFK256v50gZwNs0tWY9QoY6-ugVPlpX0gsj4Vy0SjH1KEeCU3Q==">
+<meta name="csrf-token" content="J1h3pSol_BupYfe_Ui-2FiVF6VObzH_vceODTgPF40cWGR32aHqQVYQ3xdQhYvRTdHLaPqu2DoYwj9c9V_GZPQ==">
 
 <link href="/assets/c80611c4/css/bootstrap.min.css" rel="stylesheet">
 <link href="/assets/ff2ff0b/css/select2.min.css" rel="stylesheet">
