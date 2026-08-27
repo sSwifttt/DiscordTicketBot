@@ -1,5 +1,6 @@
 const express = require("express");
 const app = express();
+
 const port = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
@@ -53,7 +54,7 @@ const GIVEAWAY_PING_ROLE_ID = "1542466513871568926";
 const activeGiveaways = new Map();
 
 // ==========================================
-// SLASH COMMANDS REGISTER
+// SLASH COMMANDS
 // ==========================================
 
 client.once("ready", async () => {
@@ -70,7 +71,8 @@ client.once("ready", async () => {
     },
     {
       name: "close",
-      description: "Löscht das Ticket und sendet das Transcript in den Log-Kanal"
+      description:
+        "Löscht das Ticket und sendet das Transcript in den Log-Kanal"
     },
     {
       name: "giveaway-start",
@@ -78,7 +80,7 @@ client.once("ready", async () => {
       options: [
         {
           name: "zeit",
-          description: "Dauer (z.B. 12h, 30m, 1d)",
+          description: "Dauer, z.B. 12h, 30m oder 1d",
           type: 3,
           required: true
         },
@@ -112,12 +114,15 @@ client.once("ready", async () => {
 
     console.log("Slash-Commands erfolgreich registriert!");
   } catch (error) {
-    console.error("Fehler beim Registrieren der Commands:", error);
+    console.error(
+      "Fehler beim Registrieren der Commands:",
+      error
+    );
   }
 });
 
 // ==========================================
-// INTERAKTIONEN
+// INTERACTION CREATE
 // ==========================================
 
 client.on("interactionCreate", async (interaction) => {
@@ -185,6 +190,8 @@ client.on("interactionCreate", async (interaction) => {
         content: "✅ Panel wurde erfolgreich gepostet!",
         ephemeral: true
       });
+
+      return;
     }
 
     // ======================================
@@ -199,14 +206,18 @@ client.on("interactionCreate", async (interaction) => {
         )
       ) {
         return interaction.reply({
-          content: "❌ Du hast keine Berechtigung, Tickets zu claimen!",
+          content:
+            "❌ Du hast keine Berechtigung, Tickets zu claimen!",
           ephemeral: true
         });
       }
 
       await interaction.reply({
-        content: `👋 Dieses Ticket wurde von ${interaction.user} übernommen und wird nun bearbeitet.`
+        content:
+          `👋 Dieses Ticket wurde von ${interaction.user} übernommen und wird nun bearbeitet.`
       });
+
+      return;
     }
 
     // ======================================
@@ -221,27 +232,35 @@ client.on("interactionCreate", async (interaction) => {
         )
       ) {
         return interaction.reply({
-          content: "❌ Du hast keine Berechtigung, dieses Ticket zu schließen!",
+          content:
+            "❌ Du hast keine Berechtigung, dieses Ticket zu schließen!",
           ephemeral: true
         });
       }
 
       await interaction.reply({
-        content: "⏳ Transcript wird generiert und Ticket gelöscht...",
+        content:
+          "⏳ Transcript wird generiert und Ticket gelöscht...",
         ephemeral: true
       });
 
       try {
 
         const attachment =
-          await discordTranscripts.createTranscript(interaction.channel, {
-            limit: -1,
-            fileName: `transcript-${interaction.channel.name}.html`,
-            returnType: "attachment"
-          });
+          await discordTranscripts.createTranscript(
+            interaction.channel,
+            {
+              limit: -1,
+              fileName:
+                `transcript-${interaction.channel.name}.html`,
+              returnType: "attachment"
+            }
+          );
 
         const logChannel =
-          interaction.guild.channels.cache.get(TRANSCRIPT_CHANNEL_ID);
+          interaction.guild.channels.cache.get(
+            TRANSCRIPT_CHANNEL_ID
+          );
 
         if (logChannel) {
 
@@ -260,11 +279,17 @@ client.on("interactionCreate", async (interaction) => {
           });
         }
 
-        await interaction.channel.delete().catch(console.error);
+        await interaction.channel.delete();
 
       } catch (error) {
-        console.error("Fehler beim Schließen:", error);
+
+        console.error(
+          "Fehler beim Schließen:",
+          error
+        );
       }
+
+      return;
     }
 
     // ======================================
@@ -284,50 +309,84 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      const zeitInput = interaction.options.getString("zeit");
-      const gewinn = interaction.options.getString("gewinn");
+      // Wichtig: Sofort antworten,
+      // damit Discord keinen Timeout meldet.
+      await interaction.deferReply({
+        ephemeral: true
+      });
+
+      const zeitInput =
+        interaction.options.getString("zeit");
+
+      const gewinn =
+        interaction.options.getString("gewinn");
+
       const gewinnerAnzahl =
-        interaction.options.getInteger("gewinner_anzahl");
+        interaction.options.getInteger(
+          "gewinner_anzahl"
+        );
 
       const dauerMs = ms(zeitInput);
 
-      if (!dauerMs) {
-        return interaction.reply({
+      if (!dauerMs || dauerMs <= 0) {
+        return interaction.editReply({
           content:
-            "❌ Ungültiges Zeitformat! Nutze z.B. `12h`, `30m` oder `1d`.",
-          ephemeral: true
+            "❌ Ungültiges Zeitformat! Nutze z.B. `12h`, `30m` oder `1d`."
+        });
+      }
+
+      if (gewinnerAnzahl <= 0) {
+        return interaction.editReply({
+          content:
+            "❌ Die Gewinner-Anzahl muss mindestens 1 sein."
         });
       }
 
       const endZeitUnix =
-        Math.floor((Date.now() + dauerMs) / 1000);
+        Math.floor(
+          (Date.now() + dauerMs) / 1000
+        );
 
       const giveawayId =
-        Math.floor(Math.random() * 1000);
+        Math.floor(
+          Math.random() * 100000
+        );
 
-      const giveawayEmbed = new EmbedBuilder()
-        .setTitle(gewinn)
-        .setDescription(
-          `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
-          `Gehostet von: ${interaction.user}\n` +
-          `Teilnahmen: **0**\n` +
-          `Gewinner: **${gewinnerAnzahl}**\n\n` +
-          `Giveaway #${giveawayId}`
-        )
-        .setColor(0x2F3136);
+      // ====================================
+      // GIVEAWAY EMBED
+      // ====================================
 
-      const joinBtn = new ButtonBuilder()
-        .setCustomId("giveaway_join")
-        .setLabel("Teilnehmen")
-        .setEmoji("🎉")
-        .setStyle(ButtonStyle.Primary);
+      const giveawayEmbed =
+        new EmbedBuilder()
+          .setTitle(gewinn)
+          .setDescription(
+            `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
+            `Gehostet von: ${interaction.user}\n` +
+            `Teilnahmen: **0**\n` +
+            `Gewinner: **${gewinnerAnzahl}**\n\n` +
+            `Giveaway #${giveawayId}`
+          )
+          .setColor(0x2F3136);
+
+      const joinBtn =
+        new ButtonBuilder()
+          .setCustomId("giveaway_join")
+          .setLabel("Teilnehmen")
+          .setEmoji("🎉")
+          .setStyle(ButtonStyle.Primary);
 
       const row =
-        new ActionRowBuilder().addComponents(joinBtn);
+        new ActionRowBuilder()
+          .addComponents(joinBtn);
+
+      // ====================================
+      // ROLE PING
+      // ====================================
 
       const pingMsg =
         await interaction.channel.send({
-          content: `<@&${GIVEAWAY_PING_ROLE_ID}>`
+          content:
+            `<@&${GIVEAWAY_PING_ROLE_ID}>`
         });
 
       const msg =
@@ -336,55 +395,70 @@ client.on("interactionCreate", async (interaction) => {
           components: [row]
         });
 
+      // Ping-Nachricht löschen
       await pingMsg.delete().catch(() => null);
 
-      await interaction.reply({
-        content: "🎉 Giveaway wurde gestartet!",
-        ephemeral: true
+      // Admin-Erfolgsmeldung
+      await interaction.editReply({
+        content:
+          "🎉 Giveaway wurde erfolgreich gestartet und die Rolle wurde benachrichtigt!"
       });
 
+      // ====================================
+      // GIVEAWAY SPEICHERN
+      // ====================================
+
       activeGiveaways.set(msg.id, {
-        gewinn,
-        gewinnerAnzahl,
+        gewinn: gewinn,
+        gewinnerAnzahl: gewinnerAnzahl,
         endZeit: Date.now() + dauerMs,
         hostId: interaction.user.id,
         teilnehmer: [],
-        giveawayId,
+        giveawayId: giveawayId,
         channelId: interaction.channel.id
       });
 
       // ====================================
-      // GIVEAWAY ENDE
+      // TIMER
       // ====================================
 
       setTimeout(async () => {
 
-        const data = activeGiveaways.get(msg.id);
+        const data =
+          activeGiveaways.get(msg.id);
 
         if (!data) return;
 
         const channel =
-          client.channels.cache.get(data.channelId);
+          client.channels.cache.get(
+            data.channelId
+          );
 
         if (!channel) return;
 
         const fetchedMsg =
-          await channel.messages.fetch(msg.id).catch(() => null);
+          await channel.messages
+            .fetch(msg.id)
+            .catch(() => null);
 
         if (!fetchedMsg) return;
 
-        // Keine Teilnehmer
+        // ==================================
+        // KEINE TEILNEHMER
+        // ==================================
+
         if (data.teilnehmer.length === 0) {
 
-          const noWinnersEmbed = new EmbedBuilder()
-            .setTitle(data.gewinn)
-            .setDescription(
-              `Beendet!\n` +
-              `Gehostet von: <@${data.hostId}>\n` +
-              `Gewinner: **Niemand hat teilgenommen.**\n\n` +
-              `Giveaway #${data.giveawayId}`
-            )
-            .setColor(0xED4245);
+          const noWinnersEmbed =
+            new EmbedBuilder()
+              .setTitle(data.gewinn)
+              .setDescription(
+                `Beendet!\n` +
+                `Gehostet von: <@${data.hostId}>\n` +
+                `Gewinner: **Niemand hat teilgenommen.**\n\n` +
+                `Giveaway #${data.giveawayId}`
+              )
+              .setColor(0xED4245);
 
           await fetchedMsg.edit({
             embeds: [noWinnersEmbed],
@@ -392,43 +466,65 @@ client.on("interactionCreate", async (interaction) => {
           });
 
           activeGiveaways.delete(msg.id);
+
           return;
         }
 
-        // Gewinner auswählen
-        const gewinner = [];
-        const copyTeilnehmer = [...data.teilnehmer];
+        // ==================================
+        // GEWINNER AUSWÄHLEN
+        // ==================================
 
-        const anzahl = Math.min(
-          data.gewinnerAnzahl,
-          copyTeilnehmer.length
-        );
+        const gewinner = [];
+
+        const copyTeilnehmer =
+          [...data.teilnehmer];
+
+        const anzahl =
+          Math.min(
+            data.gewinnerAnzahl,
+            copyTeilnehmer.length
+          );
 
         for (let i = 0; i < anzahl; i++) {
 
           const index =
-            Math.floor(Math.random() * copyTeilnehmer.length);
+            Math.floor(
+              Math.random() *
+              copyTeilnehmer.length
+            );
 
+          // WICHTIG: [0], damit nur die ID
+          // gespeichert wird und kein Array.
           const picked =
-            copyTeilnehmer.splice(index, 1)[0];
+            copyTeilnehmer.splice(
+              index,
+              1
+            )[0];
 
           gewinner.push(picked);
         }
 
         const gewinnerMentions =
           gewinner
-            .map((id) => `<@${id}>`)
+            .map(
+              (id) => `<@${id}>`
+            )
             .join(", ");
 
-        const endEmbed = new EmbedBuilder()
-          .setTitle(data.gewinn)
-          .setDescription(
-            `Beendet!\n` +
-            `Gehostet von: <@${data.hostId}>\n` +
-            `Gewinner: ${gewinnerMentions}\n\n` +
-            `Giveaway #${data.giveawayId}`
-          )
-          .setColor(0x23272A);
+        // ==================================
+        // ENDE EMBED
+        // ==================================
+
+        const endEmbed =
+          new EmbedBuilder()
+            .setTitle(data.gewinn)
+            .setDescription(
+              `Beendet!\n` +
+              `Gehostet von: <@${data.hostId}>\n` +
+              `Gewinner: ${gewinnerMentions}\n\n` +
+              `Giveaway #${data.giveawayId}`
+            )
+            .setColor(0x23272A);
 
         await fetchedMsg.edit({
           embeds: [endEmbed],
@@ -437,12 +533,15 @@ client.on("interactionCreate", async (interaction) => {
 
         await channel.send({
           content:
-            `Glückwunsch ${gewinnerMentions}, du hast das **${data.gewinn}**-Giveaway gewonnen!`
+            `🎉 Glückwunsch ${gewinnerMentions}, ` +
+            `du hast das **${data.gewinn}**-Giveaway gewonnen!`
         });
 
         activeGiveaways.delete(msg.id);
 
       }, dauerMs);
+
+      return;
     }
   }
 
@@ -453,13 +552,17 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
 
     // ======================================
-    // GIVEAWAY TEILNAHME
+    // GIVEAWAY JOIN
     // ======================================
 
-    if (interaction.customId === "giveaway_join") {
+    if (
+      interaction.customId === "giveaway_join"
+    ) {
 
       const data =
-        activeGiveaways.get(interaction.message.id);
+        activeGiveaways.get(
+          interaction.message.id
+        );
 
       if (!data) {
         return interaction.reply({
@@ -469,7 +572,11 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      if (data.teilnehmer.includes(interaction.user.id)) {
+      if (
+        data.teilnehmer.includes(
+          interaction.user.id
+        )
+      ) {
         return interaction.reply({
           content:
             "❌ Du nimmst bereits an diesem Giveaway teil!",
@@ -477,7 +584,9 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      data.teilnehmer.push(interaction.user.id);
+      data.teilnehmer.push(
+        interaction.user.id
+      );
 
       activeGiveaways.set(
         interaction.message.id,
@@ -485,18 +594,21 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       const endZeitUnix =
-        Math.floor(data.endZeit / 1000);
+        Math.floor(
+          data.endZeit / 1000
+        );
 
-      const updatedEmbed = new EmbedBuilder()
-        .setTitle(data.gewinn)
-        .setDescription(
-          `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
-          `Gehostet von: <@${data.hostId}>\n` +
-          `Teilnahmen: **${data.teilnehmer.length}**\n` +
-          `Gewinner: **${data.gewinnerAnzahl}**\n\n` +
-          `Giveaway #${data.giveawayId}`
-        )
-        .setColor(0x2F3136);
+      const updatedEmbed =
+        new EmbedBuilder()
+          .setTitle(data.gewinn)
+          .setDescription(
+            `Endet: <t:${endZeitUnix}:R> (<t:${endZeitUnix}:F>)\n` +
+            `Gehostet von: <@${data.hostId}>\n` +
+            `Teilnahmen: **${data.teilnehmer.length}**\n` +
+            `Gewinner: **${data.gewinnerAnzahl}**\n\n` +
+            `Giveaway #${data.giveawayId}`
+          )
+          .setColor(0x2F3136);
 
       await interaction.update({
         embeds: [updatedEmbed]
@@ -506,7 +618,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     // ======================================
-    // TICKET SYSTEM
+    // TICKET BUTTONS
     // ======================================
 
     await interaction.deferReply({
@@ -516,19 +628,21 @@ client.on("interactionCreate", async (interaction) => {
     const channels =
       interaction.guild.channels.cache;
 
-    const hasTicket = channels.some(
-      (channel) =>
-        channel.type === ChannelType.GuildText &&
-        channel.permissionOverwrites.cache.has(
-          interaction.user.id
-        ) &&
-        (
-          channel.name.includes("kauf-") ||
-          channel.name.includes("verkauf-") ||
-          channel.name.includes("support-") ||
-          channel.name.includes("claim-")
-        )
-    );
+    const hasTicket =
+      channels.some(
+        (channel) =>
+          channel.type ===
+            ChannelType.GuildText &&
+          channel.permissionOverwrites.cache.has(
+            interaction.user.id
+          ) &&
+          (
+            channel.name.includes("kauf-") ||
+            channel.name.includes("verkauf-") ||
+            channel.name.includes("support-") ||
+            channel.name.includes("claim-")
+          )
+      );
 
     if (hasTicket) {
       return interaction.editReply({
@@ -538,14 +652,19 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     let ticketName = "ticket";
-    let welcomeMessage = "Willkommen im Ticket!";
+    let welcomeMessage =
+      "Willkommen im Ticket!";
+
     let categoryId = null;
 
     // ======================================
-    // KAUFEN
+    // SPAWNER KAUFEN
     // ======================================
 
-    if (interaction.customId === "spawner_kaufen") {
+    if (
+      interaction.customId ===
+      "spawner_kaufen"
+    ) {
 
       ticketName =
         `🛒-kauf-${interaction.user.username}`;
@@ -554,14 +673,18 @@ client.on("interactionCreate", async (interaction) => {
         `Hallo ${interaction.user}, hier kannst du **Spawner kaufen**. ` +
         `Bitte schreibe, welche Spawner du suchst und wie viele du benötigst!`;
 
-      categoryId = CATEGORIES.kaufen;
+      categoryId =
+        CATEGORIES.kaufen;
     }
 
     // ======================================
-    // VERKAUFEN
+    // SPAWNER VERKAUFEN
     // ======================================
 
-    else if (interaction.customId === "spawner_verkaufen") {
+    else if (
+      interaction.customId ===
+      "spawner_verkaufen"
+    ) {
 
       ticketName =
         `💰-verkauf-${interaction.user.username}`;
@@ -571,30 +694,39 @@ client.on("interactionCreate", async (interaction) => {
         `Bitte nenne uns deine Spawner und die genaue Anzahl. ` +
         `Der Ankauf erfolgt zu unseren festen Server-Preisen!`;
 
-      categoryId = CATEGORIES.verkaufen;
+      categoryId =
+        CATEGORIES.verkaufen;
     }
 
     // ======================================
     // SUPPORT
     // ======================================
 
-    else if (interaction.customId === "support_ticket") {
+    else if (
+      interaction.customId ===
+      "support_ticket"
+    ) {
 
       ticketName =
         `🛠️-support-${interaction.user.username}`;
 
       welcomeMessage =
         `Hallo ${interaction.user}, ein Teammitglied wird sich gleich ` +
-        `um dein **Support-Anliegen** kümmern. Bitte beschreibe dein Problem genau.`;
+        `um dein **Support-Anliegen** kümmern. ` +
+        `Bitte beschreibe dein Problem genau.`;
 
-      categoryId = CATEGORIES.support;
+      categoryId =
+        CATEGORIES.support;
     }
 
     // ======================================
     // GIVEAWAY CLAIM
     // ======================================
 
-    else if (interaction.customId === "giveaway_claim") {
+    else if (
+      interaction.customId ===
+      "giveaway_claim"
+    ) {
 
       ticketName =
         `🎉-claim-${interaction.user.username}`;
@@ -604,7 +736,19 @@ client.on("interactionCreate", async (interaction) => {
         `Du möchtest deinen **Giveaway-Gewinn einfordern**. ` +
         `Bitte sende einen Screenshot des Gewinns hier hinein.`;
 
-      categoryId = CATEGORIES.giveaway;
+      categoryId =
+        CATEGORIES.giveaway;
+    }
+
+    // ======================================
+    // UNBEKANNTER BUTTON
+    // ======================================
+
+    else {
+      return interaction.editReply({
+        content:
+          "❌ Dieser Button ist nicht bekannt."
+      });
     }
 
     // ======================================
@@ -623,39 +767,67 @@ client.on("interactionCreate", async (interaction) => {
 
             // @everyone
             {
-              id: interaction.guild.roles.everyone.id,
+              id:
+                interaction.guild.roles
+                  .everyone.id,
+
               deny: [
-                PermissionsBitField.Flags.ViewChannel
+                PermissionsBitField.Flags
+                  .ViewChannel
               ]
             },
 
-            // Ticket-Ersteller
+            // User
             {
               id: interaction.user.id,
+
               allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory
+                PermissionsBitField.Flags
+                  .ViewChannel,
+
+                PermissionsBitField.Flags
+                  .SendMessages,
+
+                PermissionsBitField.Flags
+                  .ReadMessageHistory
               ]
             },
 
             // Bot
             {
               id: client.user.id,
+
               allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ManageChannels
+                PermissionsBitField.Flags
+                  .ViewChannel,
+
+                PermissionsBitField.Flags
+                  .SendMessages,
+
+                PermissionsBitField.Flags
+                  .ReadMessageHistory,
+
+                PermissionsBitField.Flags
+                  .ManageChannels
               ]
             }
           ]
         });
 
-      const ticketEmbed = new EmbedBuilder()
-        .setTitle("✉️ Support-Ticket geöffnet")
-        .setDescription(welcomeMessage)
-        .setColor(0x5865F2)
-        .setTimestamp();
+      // ====================================
+      // TICKET EMBED
+      // ====================================
+
+      const ticketEmbed =
+        new EmbedBuilder()
+          .setTitle(
+            "✉️ Support-Ticket geöffnet"
+          )
+          .setDescription(
+            welcomeMessage
+          )
+          .setColor(0x5865F2)
+          .setTimestamp();
 
       await ticketChannel.send({
         embeds: [ticketEmbed]
@@ -663,7 +835,7 @@ client.on("interactionCreate", async (interaction) => {
 
       await interaction.editReply({
         content:
-          `Dein Ticket wurde erfolgreich erstellt: ${ticketChannel}`
+          `✅ Dein Ticket wurde erfolgreich erstellt: ${ticketChannel}`
       });
 
     } catch (error) {
@@ -682,20 +854,30 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // ==========================================
-// FEHLER
+// CLIENT ERROR
 // ==========================================
 
-client.on("error", console.error);
+client.on("error", (error) => {
+  console.error(
+    "Discord Client Fehler:",
+    error
+  );
+});
 
 // ==========================================
-// BOT LOGIN
+// TOKEN PRÜFEN
 // ==========================================
 
 if (!TOKEN) {
   console.error(
-    "❌ TOKEN wurde nicht gefunden! Bitte die Umgebungsvariable TOKEN setzen."
+    "❌ TOKEN wurde nicht gefunden!"
   );
+
   process.exit(1);
 }
+
+// ==========================================
+// BOT LOGIN
+// ==========================================
 
 client.login(TOKEN);
